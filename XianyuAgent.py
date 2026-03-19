@@ -1,17 +1,78 @@
 import re
+import json
 from typing import List, Dict
 import os
-from openai import OpenAI
 from loguru import logger
+from dotenv import load_dotenv
+
+# 确保在检查环境变量之前加载 .env 文件
+# （防止被 import 时 .env 尚未加载导致 API_KEY 为 None）
+if os.path.exists(".env"):
+    load_dotenv()
+
+# 检查是否使用 QClaw（仅当 API_KEY 为未配置的占位符时）
+USE_QCLAW = os.getenv("API_KEY") in [None, "your_api_key_here"]
+
+if USE_QCLAW:
+    import qclaw_llm
+    logger.info("🤖 使用 QClaw AI 进行回复")
+else:
+    from openai import OpenAI
+    logger.info(f"🤖 使用 OpenAI 兼容 API 进行回复 (BASE_URL: {os.getenv('MODEL_BASE_URL', 'default')})")
+
+
+def _extract_reply(response) -> str:
+    """安全地从LLM响应中提取回复内容，兼容各种中转API返回格式"""
+    # 标准 OpenAI SDK 响应对象
+    if hasattr(response, 'choices') and response.choices:
+        return response.choices[0].message.content
+
+    # 某些中转API返回的是字符串
+    if isinstance(response, str):
+        # 尝试解析为JSON（有些中转站返回JSON字符串）
+        try:
+            data = json.loads(response)
+            if isinstance(data, dict):
+                # 标准格式: {"choices": [{"message": {"content": "..."}}]}
+                if 'choices' in data and len(data['choices']) > 0:
+                    return data['choices'][0].get('message', {}).get('content', response)
+                # 错误格式: {"error": {"message": "..."}}
+                if 'error' in data:
+                    error_msg = data['error'] if isinstance(data['error'], str) else data['error'].get('message', str(data['error']))
+                    logger.error(f"LLM API返回错误: {error_msg}")
+                    raise Exception(f"LLM API错误: {error_msg}")
+        except json.JSONDecodeError:
+            pass
+        # 不是JSON，直接当作回复内容返回
+        logger.warning(f"LLM返回了非标准格式(str)，直接使用: {response[:100]}...")
+        return response
+
+    # dict 格式
+    if isinstance(response, dict):
+        if 'choices' in response and len(response['choices']) > 0:
+            return response['choices'][0].get('message', {}).get('content', str(response))
+        if 'error' in response:
+            error_msg = response['error'] if isinstance(response['error'], str) else response['error'].get('message', str(response['error']))
+            logger.error(f"LLM API返回错误: {error_msg}")
+            raise Exception(f"LLM API错误: {error_msg}")
+
+    # 兜底：转为字符串
+    logger.warning(f"LLM返回了未知格式({type(response).__name__})，强制转换为字符串")
+    return str(response)
 
 
 class XianyuReplyBot:
     def __init__(self):
-        # 初始化OpenAI客户端
-        self.client = OpenAI(
-            api_key=os.getenv("API_KEY"),
-            base_url=os.getenv("MODEL_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-        )
+        # 初始化客户端
+        if USE_QCLAW:
+            self.client = qclaw_llm.OpenAI()
+        else:
+            from openai import OpenAI
+            api_key = os.getenv("API_KEY") or "no-key"  # CLIProxy 反代无需真实 Key
+            self.client = OpenAI(
+                api_key=api_key,
+                base_url=os.getenv("MODEL_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+            )
         self._init_system_prompts()
         self._init_agents()
         self.router = IntentRouter(self.agents['classify'])
@@ -228,7 +289,7 @@ class BaseAgent:
             max_tokens=500,
             top_p=0.8
         )
-        return response.choices[0].message.content
+        return _extract_reply(response)
 
 
 class PriceAgent(BaseAgent):
@@ -247,7 +308,7 @@ class PriceAgent(BaseAgent):
             max_tokens=500,
             top_p=0.8
         )
-        return self.safety_filter(response.choices[0].message.content)
+        return self.safety_filter(_extract_reply(response))
 
     def _calc_temperature(self, bargain_count: int) -> float:
         """动态温度策略"""
@@ -266,13 +327,10 @@ class TechAgent(BaseAgent):
             messages=messages,
             temperature=0.4,
             max_tokens=500,
-            top_p=0.8,
-            extra_body={
-                "enable_search": True,
-            }
+            top_p=0.8
         )
 
-        return self.safety_filter(response.choices[0].message.content)
+        return self.safety_filter(_extract_reply(response))
 
 
     # def _fetch_tech_specs(self) -> str:

@@ -708,18 +708,17 @@ class XianyuLive:
 
 def check_and_complete_env():
     """检查并补全关键环境变量"""
-    # 定义关键变量及其默认无效值（占位符）
+    # API_KEY 允许为空（使用反代时无需 Key），只有 COOKIES_STR 是必须的
     critical_vars = {
-        "API_KEY": "默认使用通义千问,apikey通过百炼模型平台获取",
         "COOKIES_STR": "your_cookies_here"
     }
-    
+
     env_path = ".env"
     updated = False
-    
+
     for key, placeholder in critical_vars.items():
         curr_val = os.getenv(key)
-        
+
         # 如果变量未设置，或者值等于占位符
         if not curr_val or curr_val == placeholder:
             logger.warning(f"配置项 [{key}] 未设置或为默认值，请输入")
