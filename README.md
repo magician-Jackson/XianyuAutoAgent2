@@ -21,32 +21,6 @@
 | 技术支持 | ✅ 网络搜索整合                | 🔄 RAG知识库增强              |
 | 运维监控 | ✅ 基础日志                    | 🔄 钉钉集成<br>🔄  Web管理界面 |
 
-## 🎨效果图
-<div align="center">
-  <img src="./images/demo1.png" width="600" alt="客服">
-  <br>
-  <em>图1: 客服随叫随到</em>
-</div>
-
-
-<div align="center">
-  <img src="./images/demo2.png" width="600" alt="议价专家">
-  <br>
-  <em>图2: 阶梯式议价</em>
-</div>
-
-<div align="center">
-  <img src="./images/demo3.png" width="600" alt="技术专家"> 
-  <br>
-  <em>图3: 技术专家上场</em>
-</div>
-
-<div align="center">
-  <img src="./images/log.png" width="600" alt="后台log"> 
-  <br>
-  <em>图4: 后台log</em>
-</div>
-
 
 ## 🚴 快速开始
 小白请直接查看[保姆级教学文档](https://my.feishu.cn/wiki/JtkBwkI9GiokZikVdyNceEfZncE)
