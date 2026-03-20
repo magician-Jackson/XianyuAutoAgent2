@@ -141,6 +141,20 @@ https://www.goofish.com/im?spm=a21ybx.home.sidebar.2.4c053da6K6mu08
 9. 程序会反复校验 Cookie 是否真的能换到 `accessToken`
 10. 校验成功后自动写回 `.env`，然后开始连接 WebSocket
 
+## 登录示意图
+
+### 1. 启动时选择本次运行模式
+
+![choose-mode](image/chiose.png)
+
+### 2. 打开闲鱼消息页后扫码登录
+
+![goofish-login](image/dengru.png)
+
+### 3. 如果出现滑块，在消息页完成验证
+
+![goofish-slider](image/huakuai.png)
+
 ## 闲鱼登录说明
 
 这版代码不是“拿到任意 Cookie 就算成功”，而是会做两层校验：
