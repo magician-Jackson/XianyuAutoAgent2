@@ -1,157 +1,219 @@
-# 🚀 Xianyu AutoAgent - 智能闲鱼客服机器人系统
+# Xianyu AutoAgent
 
-[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/) [![LLM Powered](https://img.shields.io/badge/LLM-powered-FF6F61)](https://platform.openai.com/)
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
+[![LLM Powered](https://img.shields.io/badge/LLM-powered-FF6F61)](https://platform.openai.com/)
 
-专为闲鱼平台打造的AI值守解决方案，实现闲鱼平台7×24小时自动化值守，支持多专家协同决策、智能议价和上下文感知对话。
+一个用于闲鱼消息自动回复的 Python 项目，支持：
 
-> 本项目基于 [shaxiu/XianyuAutoAgent](https://github.com/shaxiu/XianyuAutoAgent) 二次开发，新增 CLIProxy 反代支持。
+- 自动连接闲鱼消息 WebSocket
+- 基于商品信息和历史上下文生成回复
+- 本地反代和云端 API 两种 LLM 接入方式
+- 启动时选择本次运行使用的 LLM 模式
+- 自动打开闲鱼消息页登录、等待滑块验证、校验 Cookie 可用性
 
-## 🌟 核心特性
+本项目基于 [shaxiu/XianyuAutoAgent](https://github.com/shaxiu/XianyuAutoAgent) 二次开发。
 
-### 智能对话引擎
+## 功能概览
 
-| 功能模块 | 技术实现 | 关键特性 |
-| --- | --- | --- |
-| 上下文感知 | 会话历史存储 | 轻量级对话记忆管理，完整对话历史作为LLM上下文输入 |
-| 专家路由 | LLM prompt+规则路由 | 基于提示工程的意图识别 → 专家Agent动态分发，支持议价/技术/客服多场景切换 |
+- 多 Agent 回复策略：分类、议价、技术、默认回复
+- SQLite 持久化会话上下文和商品信息
+- 支持人工接管 / 自动回复切换
+- 支持本地 OpenAI 兼容反代
+- 每次运行 `python main.py` 都会强制重新登录闲鱼消息页
 
-### 业务功能矩阵
-
-| 模块 | 已实现 | 规划中 |
-| --- | --- | --- |
-| 核心引擎 | ✅ LLM自动回复 / ✅ 上下文管理 | 🔄 情感分析增强 |
-| 议价系统 | ✅ 阶梯降价策略 | 🔄 市场比价功能 |
-| 技术支持 | ✅ 网络搜索整合 | 🔄 RAG知识库增强 |
-| 运维监控 | ✅ 基础日志 | 🔄 钉钉集成 / 🔄 Web管理界面 |
-
-## 🚴 快速开始
-
-### 环境要求
+## 环境要求
 
 - Python 3.8+
+- 已安装 Edge 或 Chrome
 
-### 安装步骤
+如果本机没有可用浏览器内核，安装依赖后再执行：
 
-#### 1. 克隆仓库
+```bash
+playwright install chromium
+```
+
+## 安装
 
 ```bash
 git clone https://github.com/magician-Jackson/XianyuAutoAgent2.git
 cd XianyuAutoAgent2
-```
-
-#### 2. 安装依赖
-
-```bash
 pip install -r requirements.txt
 ```
 
-#### 3. 配置环境变量
-
-复制 `.env.example` 为 `.env`，然后根据你的情况修改配置：
+复制环境变量模板：
 
 ```bash
 cp .env.example .env
 ```
 
-`.env` 文件说明：
+Windows 也可以直接手动复制一份 `.env.example` 为 `.env`。
 
-| 变量名 | 必填 | 说明 |
-| --- | --- | --- |
-| `API_KEY` | ✅ | API Key，通过模型平台获取；若使用 CLIProxy 反代，填写反代提供的 Key |
-| `COOKIES_STR` | ✅ | 闲鱼网页端 Cookie（获取方式见下方说明） |
-| `MODEL_BASE_URL` | ✅ | 模型 API 地址（默认通义千问） |
-| `MODEL_NAME` | ✅ | 模型名称（默认 `qwen-max`） |
-| `TOGGLE_KEYWORDS` | ❌ | 人工接管切换关键词，默认为中文句号 `。`（卖家发送该关键词切换人工/AI接管模式） |
-| `SIMULATE_HUMAN_TYPING` | ❌ | 是否模拟人工打字延迟，`True` / `False`（默认 `False`） |
+## `.env` 配置
 
-**如何获取闲鱼 Cookie（COOKIES_STR）：**
+### 1. LLM 接入模式
 
-1. 打开浏览器，登录 [闲鱼网页版](https://www.goofish.com/)
-2. 按 `F12` 打开开发者工具
-3. 切换到 **Network（网络）** 选项卡
-4. 点击 **Fetch/XHR** 过滤器
-5. 在闲鱼页面上随意操作（如点击消息），触发一个网络请求
-6. 点击任意一个请求，在 **Headers（请求头）** 中找到 `Cookie` 字段
-7. 复制完整的 Cookie 值，粘贴到 `.env` 文件的 `COOKIES_STR` 中
+项目支持四种值：
 
-#### 4. 配置提示词文件（可选）
+- `proxy`：本地反代
+- `api`：云端 / 官方 OpenAI 兼容接口
+- `qclaw`：仓库里的 QClaw 模式
+- `auto`：兼容旧配置，自动判断
 
-项目中的 `prompts/` 目录下已内置默认提示词模板，可直接使用。如需自定义，编辑对应文件即可：
+推荐在 `.env` 里保留默认值：
 
-| 文件 | 用途 |
-| --- | --- |
-| `prompts/classify_prompt.txt` | 意图分类提示词 |
-| `prompts/price_prompt.txt` | 议价专家提示词 |
-| `prompts/tech_prompt.txt` | 技术专家提示词 |
-| `prompts/default_prompt.txt` | 默认回复提示词 |
+```env
+LLM_PROVIDER=auto
+```
 
-### 使用方法
+然后在运行 `python main.py` 时再选择本次使用：
 
-运行主程序：
+- `1` 本地反代
+- `2` 云端 API
+- `3` 使用 `.env` 默认值
+
+### 2. 云端 API 配置
+
+例如百炼 / 其他 OpenAI 兼容平台：
+
+```env
+API_KEY=your_api_key_here
+API_MODEL_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+API_MODEL_NAME=qwen-max
+```
+
+### 3. 本地反代配置
+
+例如 CLIProxy / 本地 OpenAI 兼容网关：
+
+```env
+LOCAL_PROXY_API_KEY=openclaw-local-key
+LOCAL_PROXY_BASE_URL=http://127.0.0.1:8317/v1
+LOCAL_PROXY_MODEL_NAME=gpt-5.3-codex
+```
+
+### 4. 兼容旧配置
+
+以下变量仍然保留，用于兼容旧版配置：
+
+```env
+MODEL_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+MODEL_NAME=qwen-max
+```
+
+### 5. 闲鱼登录配置
+
+```env
+COOKIES_STR=your_cookies_here
+```
+
+现在通常不需要手工填写真实 Cookie。程序启动时会自动清空旧 Cookie，然后打开闲鱼消息页让你重新登录。
+
+### 6. 其他可选项
+
+```env
+TOGGLE_KEYWORDS=。
+SIMULATE_HUMAN_TYPING=False
+```
+
+## 运行流程
+
+直接运行：
 
 ```bash
 python main.py
 ```
 
-启动后程序会自动连接闲鱼 WebSocket，监听买家消息并通过 LLM 自动回复。
+当前版本的启动流程是：
 
-- 卖家发送 `。`（中文句号）可切换为 **人工接管模式**，再次发送切换回 **AI 接管模式**
-- 支持自动识别买家意图，分发给对应专家（议价 / 技术 / 默认客服）
+1. 读取 `.env`
+2. 让你选择本次运行使用 `proxy`、`api` 或 `.env` 默认值
+3. 初始化 LLM 客户端
+4. 清空旧 `COOKIES_STR`
+5. 清空浏览器登录缓存 `data/browser_profile/`
+6. 自动打开闲鱼消息页：
 
----
+```text
+https://www.goofish.com/im?spm=a21ybx.home.sidebar.2.4c053da6K6mu08
+```
 
-## 🔌 使用 CLIProxy 反代（免费调用大模型）
+7. 你在浏览器里扫码登录
+8. 如果出现滑块，在消息页完成验证
+9. 程序会反复校验 Cookie 是否真的能换到 `accessToken`
+10. 校验成功后自动写回 `.env`，然后开始连接 WebSocket
 
-如果你没有模型平台的 API Key，可以通过 CLIProxy 等本地反代工具，将大模型服务转发为 OpenAI 兼容接口。
+## 闲鱼登录说明
 
-### 配置步骤
+这版代码不是“拿到任意 Cookie 就算成功”，而是会做两层校验：
 
-1. 启动你的 CLIProxy 服务，记下终端输出的 **API 地址** 和 **API Key**，例如：
+- 必须已经进入闲鱼消息页
+- 必须通过滑块 / 风控，Cookie 真正能够调用 `mtop.taobao.idlemessage.pc.login.token`
 
-   ```text
-   API 地址: http://127.0.0.1:8317/v1
-   API Key:  openclaw-local-key
-   ```
+只有通过校验的 Cookie 才会被保存。
 
-2. 修改 `.env` 文件：
+如果运行过程中再次触发风控，程序也会尝试重新打开消息页让你重新登录或过滑块。
 
-   ```env
-   API_KEY=openclaw-local-key
-   MODEL_BASE_URL=http://127.0.0.1:8317/v1
-   MODEL_NAME=gpt-5.3-codex
-   ```
+## 目录说明
 
-3. 正常运行即可，程序会自动通过反代调用模型：
+- `main.py`：主入口，负责启动、WebSocket、消息处理
+- `browser_cookie_login.py`：浏览器登录、消息页风控校验、Cookie 刷新
+- `XianyuApis.py`：闲鱼接口调用与 token 获取
+- `XianyuAgent.py`：LLM 路由和回复生成
+- `context_manager.py`：SQLite 上下文存储
+- `prompts/`：各类提示词
+- `utils/`：工具函数
 
-   ```bash
-   python main.py
-   ```
+## 常见场景
 
-### 兼容性说明
+### 使用本地反代
 
-本项目兼容所有 OpenAI 格式的 API 接口，包括但不限于：
+`.env` 示例：
 
-- 阿里百炼（通义千问）：`https://dashscope.aliyuncs.com/compatible-mode/v1`
-- CLIProxy 本地反代：`http://127.0.0.1:8317/v1`
-- 其他 OpenAI 兼容服务（如 LM Studio、Ollama 等）
+```env
+LLM_PROVIDER=auto
+LOCAL_PROXY_API_KEY=openclaw-local-key
+LOCAL_PROXY_BASE_URL=http://127.0.0.1:8317/v1
+LOCAL_PROXY_MODEL_NAME=gpt-5.3-codex
+```
 
----
+启动时输入：
 
-## 自定义提示词
+```text
+1
+```
 
-可以通过编辑 `prompts` 目录下的文件来自定义各个专家的提示词：
+### 使用云端 API
 
-- `classify_prompt.txt` - 意图分类提示词
-- `price_prompt.txt` - 价格专家提示词
-- `tech_prompt.txt` - 技术专家提示词
-- `default_prompt.txt` - 默认回复提示词
+`.env` 示例：
 
-## 🤝 参与贡献
+```env
+LLM_PROVIDER=auto
+API_KEY=你的真实API_KEY
+API_MODEL_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+API_MODEL_NAME=qwen-max
+```
 
-欢迎通过 Issue 提交建议或 PR 贡献代码。
+启动时输入：
 
-## 🛡 注意事项
+```text
+2
+```
 
-- 本项目仅供学习与交流，请勿用于商业用途
-- 本项目基于 [shaxiu/XianyuAutoAgent](https://github.com/shaxiu/XianyuAutoAgent) 二次开发
-- 鉴于项目的特殊性，可能在任何时间停止更新或删除项目
+## 提示词自定义
+
+你可以直接修改：
+
+- `prompts/classify_prompt.txt`
+- `prompts/price_prompt.txt`
+- `prompts/tech_prompt.txt`
+- `prompts/default_prompt.txt`
+
+## 注意事项
+
+- 本项目仅供学习和交流使用
+- 闲鱼风控策略可能随时变化
+- 启动时会强制重新登录，因此不会复用上一次运行的登录态
+- `data/browser_profile/` 为临时浏览器登录缓存，已加入 `.gitignore`
+
+## 致谢
+
+- [shaxiu/XianyuAutoAgent](https://github.com/shaxiu/XianyuAutoAgent)
