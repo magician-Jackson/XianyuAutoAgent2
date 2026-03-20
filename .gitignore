@@ -2,6 +2,11 @@
 .env
 # 提示词文件
 *_prompt.txt
+!prompts/
+!prompts/classify_prompt.txt
+!prompts/default_prompt.txt
+!prompts/price_prompt.txt
+!prompts/tech_prompt.txt
 # Python缓存文件
 __pycache__/
 *.py[cod]
