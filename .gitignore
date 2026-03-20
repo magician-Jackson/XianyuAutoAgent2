@@ -38,6 +38,7 @@ logs/
 *.db
 *.sqlite3
 *.sqlite
+data/browser_profile/
 
 # images 文件夹（二维码、截图等）
 images/

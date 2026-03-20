@@ -11,7 +11,106 @@ if os.path.exists(".env"):
     load_dotenv()
 
 # 检查是否使用 QClaw（仅当 API_KEY 为未配置的占位符时）
-USE_QCLAW = os.getenv("API_KEY") in [None, "your_api_key_here"]
+DEFAULT_API_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DEFAULT_API_MODEL_NAME = "qwen-max"
+DEFAULT_PROXY_BASE_URL = "http://127.0.0.1:8317/v1"
+DEFAULT_PROXY_API_KEY = "openclaw-local-key"
+DEFAULT_PROXY_MODEL_NAME = "gpt-5.3-codex"
+SUPPORTED_LLM_PROVIDERS = {"auto", "api", "proxy", "qclaw"}
+
+
+def _is_blank(value: str) -> bool:
+    return value is None or str(value).strip() == ""
+
+
+def _first_non_blank(*values: str) -> str:
+    for value in values:
+        if not _is_blank(value):
+            return str(value).strip()
+    return ""
+
+
+def _is_placeholder_api_key(value: str) -> bool:
+    return _is_blank(value) or str(value).strip() == "your_api_key_here"
+
+
+def _is_local_base_url(value: str) -> bool:
+    if _is_blank(value):
+        return False
+    base_url = str(value).lower()
+    return "127.0.0.1" in base_url or "localhost" in base_url
+
+
+def _resolve_llm_provider() -> str:
+    provider = os.getenv("LLM_PROVIDER", "auto").strip().lower()
+    if provider not in SUPPORTED_LLM_PROVIDERS:
+        logger.warning(f"未知的 LLM_PROVIDER={provider}，将回退到 auto")
+        provider = "auto"
+
+    if provider != "auto":
+        return provider
+
+    legacy_base_url = os.getenv("MODEL_BASE_URL")
+    if _is_local_base_url(legacy_base_url):
+        return "proxy"
+
+    if not _is_placeholder_api_key(os.getenv("API_KEY")):
+        return "api"
+
+    return "qclaw"
+
+
+def _resolve_openai_config(provider: str) -> Dict[str, str]:
+    if provider == "proxy":
+        return {
+            "api_key": _first_non_blank(
+                os.getenv("LOCAL_PROXY_API_KEY"),
+                os.getenv("API_KEY"),
+                DEFAULT_PROXY_API_KEY,
+            ),
+            "base_url": _first_non_blank(
+                os.getenv("LOCAL_PROXY_BASE_URL"),
+                os.getenv("MODEL_BASE_URL"),
+                DEFAULT_PROXY_BASE_URL,
+            ),
+            "model_name": _first_non_blank(
+                os.getenv("LOCAL_PROXY_MODEL_NAME"),
+                os.getenv("MODEL_NAME"),
+                DEFAULT_PROXY_MODEL_NAME,
+            ),
+        }
+
+    if provider == "api":
+        api_key = _first_non_blank(os.getenv("API_KEY"))
+        if _is_placeholder_api_key(api_key):
+            raise ValueError("LLM_PROVIDER=api 时必须配置有效的 API_KEY")
+
+        return {
+            "api_key": api_key,
+            "base_url": _first_non_blank(
+                os.getenv("API_MODEL_BASE_URL"),
+                os.getenv("MODEL_BASE_URL"),
+                DEFAULT_API_BASE_URL,
+            ),
+            "model_name": _first_non_blank(
+                os.getenv("API_MODEL_NAME"),
+                os.getenv("MODEL_NAME"),
+                DEFAULT_API_MODEL_NAME,
+            ),
+        }
+
+    raise ValueError(f"不支持的 OpenAI 配置 provider: {provider}")
+
+
+LLM_PROVIDER = _resolve_llm_provider()
+LLM_CONFIG = None
+USE_QCLAW = LLM_PROVIDER == "qclaw"
+
+if USE_QCLAW:
+    ACTIVE_MODEL_NAME = os.getenv("MODEL_NAME", DEFAULT_API_MODEL_NAME)
+else:
+    LLM_CONFIG = _resolve_openai_config(LLM_PROVIDER)
+    ACTIVE_MODEL_NAME = LLM_CONFIG["model_name"]
 
 if USE_QCLAW:
     import qclaw_llm
@@ -64,14 +163,14 @@ def _extract_reply(response) -> str:
 class XianyuReplyBot:
     def __init__(self):
         # 初始化客户端
-        if USE_QCLAW:
+        if LLM_PROVIDER == "qclaw":
             self.client = qclaw_llm.OpenAI()
         else:
             from openai import OpenAI
             api_key = os.getenv("API_KEY") or "no-key"  # CLIProxy 反代无需真实 Key
             self.client = OpenAI(
-                api_key=api_key,
-                base_url=os.getenv("MODEL_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+                api_key=LLM_CONFIG["api_key"],
+                base_url=LLM_CONFIG["base_url"],
             )
         self._init_system_prompts()
         self._init_agents()
@@ -283,7 +382,7 @@ class BaseAgent:
     def _call_llm(self, messages: List[Dict], temperature: float = 0.4) -> str:
         """调用大模型"""
         response = self.client.chat.completions.create(
-            model=os.getenv("MODEL_NAME", "qwen-max"),
+            model=ACTIVE_MODEL_NAME,
             messages=messages,
             temperature=temperature,
             max_tokens=500,
@@ -302,7 +401,7 @@ class PriceAgent(BaseAgent):
         messages[0]['content'] += f"\n▲当前议价轮次：{bargain_count}"
 
         response = self.client.chat.completions.create(
-            model=os.getenv("MODEL_NAME", "qwen-max"),
+            model=ACTIVE_MODEL_NAME,
             messages=messages,
             temperature=dynamic_temp,
             max_tokens=500,
@@ -323,7 +422,7 @@ class TechAgent(BaseAgent):
         # messages[0]['content'] += "\n▲知识库：\n" + self._fetch_tech_specs()
 
         response = self.client.chat.completions.create(
-            model=os.getenv("MODEL_NAME", "qwen-max"),
+            model=ACTIVE_MODEL_NAME,
             messages=messages,
             temperature=0.4,
             max_tokens=500,

@@ -86,6 +86,34 @@ class XianyuApis:
         except Exception as e:
             logger.warning(f"更新.env文件失败: {str(e)}")
         
+    def apply_cookie_string(self, cookie_str):
+        """将完整 Cookie 字符串同步到当前 session，并写回 .env。"""
+        from http.cookies import SimpleCookie
+
+        cookie = SimpleCookie()
+        cookie.load(cookie_str)
+
+        self.session.cookies.clear()
+        for key, morsel in cookie.items():
+            self.session.cookies.set(key, morsel.value, domain='.goofish.com')
+
+        self.update_env_cookies()
+
+    def refresh_cookies_via_browser(self):
+        """打开闲鱼消息页，等待用户扫码并完成滑块后自动刷新 Cookie。"""
+        try:
+            from browser_cookie_login import launch_browser_login_and_get_cookie_str
+
+            logger.info("正在打开闲鱼消息页，请扫码登录并完成滑块验证...")
+            cookie_str = launch_browser_login_and_get_cookie_str(
+                env_path=os.path.join(os.getcwd(), '.env')
+            )
+            self.apply_cookie_string(cookie_str)
+            return True
+        except Exception as e:
+            logger.warning(f"自动刷新 Cookie 失败: {e}")
+            return False
+
     def hasLogin(self, retry_count=0):
         """调用hasLogin.do接口进行登录状态检查"""
         if retry_count >= 2:
@@ -184,6 +212,14 @@ class XianyuApis:
                 if not any('SUCCESS::调用成功' in ret for ret in ret_value):
                     # 检测风控/限流错误
                     error_msg = str(ret_value)
+                    if 'RGV587_ERROR' in error_msg or '被挤爆啦' in error_msg:
+                        logger.error(f"触发风控: {ret_value}")
+                        logger.error("检测到消息页风控，请进入闲鱼消息页完成滑块验证")
+
+                        if self.refresh_cookies_via_browser():
+                            logger.success("Cookie 已自动刷新，正在重试 token 获取...")
+                            return self.get_token(device_id, 0)
+
                     if 'RGV587_ERROR' in error_msg or '被挤爆啦' in error_msg:
                         logger.error(f"❌ 触发风控: {ret_value}")
                         logger.error("🔴 系统目前无法自动解决，请进入闲鱼网页版-点击消息-过滑块-复制最新的Cookie")

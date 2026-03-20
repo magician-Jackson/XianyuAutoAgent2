@@ -12,8 +12,10 @@ import random
 
 
 from utils.xianyu_utils import generate_mid, generate_uuid, trans_cookies, generate_device_id, decrypt
-from XianyuAgent import XianyuReplyBot
 from context_manager import ChatContextManager
+
+
+bot = None
 
 
 class XianyuLive:
@@ -746,6 +748,67 @@ def check_and_complete_env():
     if updated:
         logger.info("新的配置已保存/更新至 .env 文件中")
 
+def select_llm_provider():
+    """启动时让用户在本地反代和 API 之间选择一次。"""
+    default_provider = (os.getenv("LLM_PROVIDER", "auto") or "auto").strip().lower()
+    if default_provider not in {"auto", "proxy", "api", "qclaw"}:
+        default_provider = "auto"
+
+    print("\n" + "=" * 50)
+    print("请选择本次运行的 LLM 接入方式：")
+    print("1. 本地反代 (proxy)")
+    print("2. 云端 API (api)")
+    print(f"3. 使用 .env 默认值 ({default_provider})")
+    print("=" * 50)
+
+    choice = input("请输入选项 [默认 3]: ").strip()
+    selected_provider = {
+        "1": "proxy",
+        "2": "api",
+        "3": default_provider,
+        "": default_provider,
+    }.get(choice)
+
+    if not selected_provider:
+        logger.warning(f"无效选择: {choice}，将使用 .env 默认值 {default_provider}")
+        selected_provider = default_provider
+
+    os.environ["LLM_PROVIDER"] = selected_provider
+    logger.info(f"本次运行使用 LLM_PROVIDER={selected_provider}")
+    return selected_provider
+
+
+def build_reply_bot():
+    """在用户完成运行时选择后再导入并初始化回复机器人。"""
+    from XianyuAgent import XianyuReplyBot
+
+    return XianyuReplyBot()
+
+
+def ensure_cookie_env_ready():
+    """每次启动都清空旧 Cookie，并强制重新打开浏览器登录。"""
+    logger.info("本次启动将清空旧 Cookie，并强制重新登录闲鱼消息页")
+
+    try:
+        from browser_cookie_login import (
+            launch_browser_login_and_get_cookie_str,
+            reset_browser_login_state,
+        )
+
+        reset_browser_login_state(env_path=".env", clear_profile=True)
+        os.environ["COOKIES_STR"] = "your_cookies_here"
+
+        logger.info("已清空旧 Cookie 和浏览器登录缓存，准备重新登录")
+        cookie_str = launch_browser_login_and_get_cookie_str(env_path=".env")
+        if cookie_str:
+            os.environ["COOKIES_STR"] = cookie_str
+            return
+    except Exception as e:
+        logger.warning(f"自动重新登录失败，将回退到手动输入: {e}")
+
+    os.environ.pop("COOKIES_STR", None)
+    check_and_complete_env()
+
 
 if __name__ == '__main__':
     # 加载环境变量
@@ -768,10 +831,12 @@ if __name__ == '__main__':
     logger.info(f"日志级别设置为: {log_level}")
     
     # 交互式检查并补全配置
-    check_and_complete_env()
-    
+    select_llm_provider()
+    bot = build_reply_bot()
+
+    ensure_cookie_env_ready()
+
     cookies_str = os.getenv("COOKIES_STR")
-    bot = XianyuReplyBot()
     xianyuLive = XianyuLive(cookies_str)
     # 常驻进程
     asyncio.run(xianyuLive.main())
